@@ -60,7 +60,15 @@ header>*{pointer-events:auto}
 .seg button[aria-pressed="true"]{background:var(--moon);color:#2a1e05}
 
 /* status card */
-#card{position:fixed;right:16px;top:calc(70px + env(safe-area-inset-top));width:340px;max-height:calc(100% - 200px);overflow:auto;padding:18px;z-index:4}
+#card{position:fixed;right:16px;top:calc(70px + env(safe-area-inset-top));width:340px;max-height:calc(100% - 200px);overflow:auto;padding:18px;z-index:4;transition:transform .45s cubic-bezier(.2,.8,.2,1),opacity .3s}
+#card.away{transform:translateX(calc(100% + 40px));opacity:0;pointer-events:none}
+#cardHide{position:absolute;left:8px;bottom:8px;width:30px;height:30px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.07);display:grid;place-items:center;color:var(--muted)}
+#cardHide:hover{color:var(--text);background:rgba(255,255,255,.14)}
+#cardHide svg,#cardShow svg{width:16px;height:16px}
+#cardShow{position:fixed;right:0;top:calc(84px + env(safe-area-inset-top));z-index:4;display:flex;align-items:center;gap:6px;padding:8px 10px 8px 12px;border-radius:16px 0 0 16px;border-right:0;transform:translateX(110%);transition:transform .45s cubic-bezier(.2,.8,.2,1);font-weight:700;font-size:13px}
+#cardShow.on{transform:none}
+#cardShow canvas{width:30px;height:30px}
+#card{padding-bottom:44px}
 #card .head{display:flex;gap:14px;align-items:center}
 #phaseIcon{width:64px;height:64px;flex:none;border-radius:50%}
 #card h2{margin:0;font-family:var(--display);font-weight:800;font-size:23px;line-height:1.1;text-wrap:balance}
@@ -144,9 +152,10 @@ body.space .garden-only{display:none!important}
   header{flex-wrap:wrap}
   #card{left:12px;right:12px;width:auto;top:calc(100px + env(safe-area-inset-top));padding:14px;max-height:46%}
   #card.compact .rows,#card.compact .actions,#card.compact .light,#card.compact .tiny,#card.compact .chips,#card.compact .lead{display:none}
-  #cardToggle{display:block;position:absolute;right:10px;top:10px;border:0;background:rgba(255,255,255,.08);border-radius:10px;padding:4px 9px;font-size:12px;font-weight:700}
+  #cardToggle{display:block;position:absolute;right:8px;bottom:8px;height:30px;border:1px solid var(--line);background:rgba(255,255,255,.07);border-radius:10px;padding:0 12px;font-size:12px;font-weight:700}
+  #card{padding-bottom:44px}
   #phaseIcon{width:48px;height:48px}
-  #card h2{font-size:19px;padding-right:56px}
+  #card h2{font-size:19px}
   #timebar{left:8px;right:8px;grid-template-columns:auto 1fr auto;grid-template-areas:"when when right" "btns slider slider";gap:8px 10px;padding:10px 12px}
   .when{grid-area:when;flex-direction:row;align-items:baseline;gap:10px}
   .when .t{font-size:24px}
@@ -256,7 +265,9 @@ body.space .garden-only{display:none!important}
   </div>
 </header>
 
+<button id="cardShow" class="glass" aria-label="Ukázat panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg><canvas id="cardShowIcon" width="60" height="60"></canvas></button>
 <section id="card" class="glass" aria-live="polite">
+  <button id="cardHide" aria-label="Schovat panel doprava" title="Schovat panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
   <button id="cardToggle" aria-expanded="true">Méně</button>
   <div class="head">
     <canvas id="phaseIcon" width="128" height="128" aria-hidden="true"></canvas>
@@ -814,12 +825,51 @@ function updateGarden(dt){
   // camera
   if(!dragHeading&&(S.follow||S.top)){
     const fwd=altAzDir(0,S.heading,_v);let pos,tgt;
-    if(S.top){const k=1-Math.pow(.02,dt);G.cam.position.lerp(_v2.set(0,3.4,0),k);G.topLook.lerp(new T.Vector3(0,80,0).addScaledVector(fwd,.6),k);G.cam.up.lerp(fwd,k).normalize();G.controls.target.copy(G.topLook);pos=null}
+    if(S.top){pos=null}
     else{G.cam.up.set(0,1,0);const mUp=m.alt>0&&Math.abs(rel)<70;G.pitch=lerp(G.pitch||8,mUp?clamp(m.alt-18,8,24):8,1-Math.pow(.1,dt));
       pos=_v2.copy(fwd).multiplyScalar(-7.5);pos.y=1.7;tgt=fwd.clone().multiplyScalar(16);tgt.y=1.7+23.5*Math.tan(G.pitch*D2R)}
     if(pos){const k=1-Math.pow(.04,dt);G.cam.position.lerp(pos,k);G.controls.target.lerp(tgt,k)}
   }
 }
+
+
+/* ---------- all-sky fisheye (planetarium view) ---------- */
+G.cubeRT=new T.WebGLCubeRenderTarget(1024,{generateMipmaps:false,minFilter:T.LinearFilter,magFilter:T.LinearFilter,encoding:T.sRGBEncoding});
+G.cubeCam=new T.CubeCamera(.1,600,G.cubeRT);G.cubeCam.position.set(0,3.4,0);G.scene.add(G.cubeCam);
+G.fishU={tCube:{value:G.cubeRT.texture},uHeading:{value:0},uAspect:{value:1},uRadius:{value:.9},uCenter:{value:new T.Vector2(0,0)}};
+G.fishScene=new T.Scene();G.fishCam=new T.OrthographicCamera(-1,1,1,-1,0,1);
+G.fishScene.add(new T.Mesh(new T.PlaneGeometry(2,2),new T.ShaderMaterial({uniforms:G.fishU,depthTest:false,depthWrite:false,toneMapped:false,
+ vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}`,
+ fragmentShader:`uniform samplerCube tCube;uniform float uHeading,uAspect,uRadius;uniform vec2 uCenter;varying vec2 vUv;
+ void main(){vec2 p=vUv*2.-1.;p.x*=uAspect;p-=uCenter;float r=length(p)/uRadius;
+  vec3 bg=vec3(.027,.043,.12);
+  if(r>1.13){gl_FragColor=vec4(bg,1.);return;}
+  float alt=(1.-r)*1.5707963;float psi=atan(p.x,p.y);float az=uHeading-psi;
+  vec3 d=vec3(cos(alt)*sin(az),sin(alt),-cos(alt)*cos(az));
+  vec3 c=textureCube(tCube,d).rgb;
+  float rim=smoothstep(1.13,1.08,r);c=mix(bg,c,rim);
+  c+=vec3(1.,.88,.63)*.5*smoothstep(.012,0.,abs(r-1.))*step(r,1.06);
+  gl_FragColor=vec4(c,1.);}`})));
+function fishLayout(){const w=innerWidth,h=innerHeight,a=w/h;const mob=w<760;
+  const rad=Math.min(a,1)*(mob?.78:.86);G.fishU.uAspect.value=a;G.fishU.uRadius.value=rad;G.fishU.uCenter.value.set(mob||S.cardAway?0:-a*.08,mob?.06:.04)}
+function renderFish(){
+  G.fishU.uHeading.value=S.heading*D2R;fishLayout();
+  const pr=G.starU.uPR.value;G.starU.uPR.value=pr*1.7;G.fig.visible=false;G.cubeCam.update(renderer,G.scene);G.fig.visible=true;G.starU.uPR.value=pr;
+  renderer.render(G.fishScene,G.fishCam);
+}
+// project a garden world point into the fisheye screen
+function fishProject(world){
+  _fp.copy(world).sub(G.cubeCam.position).normalize();
+  const alt=Math.asin(clamp(_fp.y,-1,1))*R2D;if(alt<-9)return null;
+  const az=Math.atan2(_fp.x,-_fp.z)*R2D;const rel=(az-S.heading)*D2R;
+  const r=(90-alt)/90*G.fishU.uRadius.value;const px=G.fishU.uCenter.value.x+r*Math.sin(-rel),py=G.fishU.uCenter.value.y+r*Math.cos(rel);
+  return{x:(px/G.fishU.uAspect.value*.5+.5)*innerWidth,y:(-py*.5+.5)*innerHeight};
+}
+const _fp=new T.Vector3();
+// drag to spin the sky in fisheye mode
+{let last=null;canvas.addEventListener('pointerdown',e=>{if(S.view==='garden'&&S.top&&!L.open){last=e.clientX;canvas.setPointerCapture(e.pointerId)}});
+ canvas.addEventListener('pointermove',e=>{if(last==null)return;S.headingTarget=null;S.heading=wrap360(S.heading+(e.clientX-last)*.35);last=e.clientX});
+ const up=()=>{if(last!=null){last=null;store.set('heading',Math.round(S.heading))}};canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);}
 
 /* ---------- labels ---------- */
 const labelsEl=$('labels');const LBL={};
@@ -835,8 +885,10 @@ mkLabel('s_here','here');
 const _p=new T.Vector3();
 function placeLabel(el,world,cam,dy,text,visible){
   if(!visible){el.style.opacity=0;return}
-  _p.copy(world).project(cam);if(_p.z>1||_p.z<-1||Math.abs(_p.x)>1.2||Math.abs(_p.y)>1.2){el.style.opacity=0;return}
-  const x=(_p.x*.5+.5)*innerWidth,y=(-_p.y*.5+.5)*innerHeight;
+  let x,y;
+  if(cam===G.cam&&S.top){const f=fishProject(world);if(!f){el.style.opacity=0;return}x=f.x;y=f.y;dy=dy>0?Math.min(dy,16):Math.max(dy,-34)}
+  else{_p.copy(world).project(cam);if(_p.z>1||_p.z<-1||Math.abs(_p.x)>1.2||Math.abs(_p.y)>1.2){el.style.opacity=0;return}
+  x=(_p.x*.5+.5)*innerWidth;y=(-_p.y*.5+.5)*innerHeight}
   el.style.transform=`translate(${x}px,${y+dy}px) translate(-50%,0)`;el.style.opacity='';if(el._t!==text){el.innerHTML=text;el._t=text}
 }
 function updateLabels(){
@@ -863,7 +915,7 @@ function updateLabels(){
 
 /* ---------- UI: card ---------- */
 const rowsEl=$('rows');
-function drawPhaseIcon(){const c=$('phaseIcon'),g=c.getContext('2d'),w=c.width;g.clearRect(0,0,w,w);drawMoonDisc(g,w/2,w/2,w/2-14,S.phaseDeg,S.place.lat<0,true)}
+function drawPhaseIcon(){const c=$('phaseIcon'),g=c.getContext('2d'),w=c.width;g.clearRect(0,0,w,w);drawMoonDisc(g,w/2,w/2,w/2-14,S.phaseDeg,S.place.lat<0,true);if(S.cardAway){const t=$('cardShowIcon'),h=t.getContext('2d');h.clearRect(0,0,60,60);drawMoonDisc(h,30,30,24,S.phaseDeg,S.place.lat<0,false)}}
 function row(st,title,text){return `<li><i class="dot ${st}"></i><div><b>${title}</b> <span>${text}</span></div></li>`}
 let lastCardKey='';
 function updateCard(){
@@ -903,6 +955,9 @@ function updateCard(){
   drawPhaseIcon();
 }
 function riseAz(){if(!S.rs.moonRise)return 90;const obs=new A.Observer(S.place.lat,S.place.lon,0);const e=A.Equator('Moon',S.rs.moonRise,obs,true,true);return A.Horizon(S.rs.moonRise,obs,e.ra,e.dec,'normal').azimuth}
+function setCardAway(v){S.cardAway=v;$('card').classList.toggle('away',v);$('cardShow').classList.toggle('on',v);store.set('cardAway',v)}
+$('cardHide').onclick=()=>setCardAway(true);$('cardShow').onclick=()=>setCardAway(false);
+if(store.get('cardAway',false))setCardAway(true);
 $('cardToggle').onclick=()=>{const c=$('card');const comp=c.classList.toggle('compact');$('cardToggle').textContent=comp?'Více':'Méně';$('cardToggle').setAttribute('aria-expanded',!comp)};
 if(innerWidth<760){$('card').classList.add('compact');$('cardToggle').textContent='Více';$('cardToggle').setAttribute('aria-expanded','false')}
 $('faceMoon').onclick=()=>{S.headingTarget=wrap360(S.b.Moon.az);if(!S.top){S.follow=true}syncCamBtns()};
@@ -926,13 +981,13 @@ function syncCamBtns(){$('camFollow').setAttribute('aria-pressed',S.follow&&!S.t
 $('camFollow').onclick=()=>{S.follow=true;S.top=false;G.cam.up.set(0,1,0);G.controls.enabled=true;syncCamBtns()};
 $('consBtn').onclick=()=>{S.cons=!S.cons;$('consBtn').setAttribute('aria-pressed',S.cons);store.set('cons',S.cons)};
 if(store.get('cons',false)){S.cons=true;$('consBtn').setAttribute('aria-pressed','true')}
-$('camTop').onclick=()=>{S.top=!S.top;if(S.top)G.topLook.copy(G.controls.target);else{S.follow=true;G.cam.up.set(0,1,0)}G.controls.enabled=!S.top;syncCamBtns()};
+$('camTop').onclick=()=>{const f=$('fade');f.style.transition='opacity .22s';f.style.opacity=1;setTimeout(()=>{S.top=!S.top;if(!S.top)S.follow=true;G.controls.enabled=!S.top;syncCamBtns();f.style.opacity=0;setTimeout(()=>f.style.transition='',300)},reduceMotion?0:230)};
 G.controls.addEventListener('start',()=>{if(!dragHeading){S.follow=false;S.top=false;syncCamBtns()}});
 
 /* ---------- drag on ground to rotate figure ---------- */
 let dragHeading=false;const ray=new T.Raycaster(),ndc=new T.Vector2();const plane=new T.Plane(new T.Vector3(0,1,0),0);const hitP=new T.Vector3();
 function groundHit(e){const r=canvas.getBoundingClientRect();ndc.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(ndc,G.cam);return ray.ray.intersectPlane(plane,hitP)}
-canvas.addEventListener('pointerdown',e=>{if(S.view!=='garden'||S.transit)return;const h=groundHit(e);if(h&&h.length()<COMPASS_R*1.05){dragHeading=true;G.controls.enabled=false;canvas.setPointerCapture(e.pointerId);S.headingTarget=null;S.heading=wrap360(Math.atan2(h.x,-h.z)*R2D);hideHint()}},true);
+canvas.addEventListener('pointerdown',e=>{if(S.view!=='garden'||S.transit||S.top)return;const h=groundHit(e);if(h&&h.length()<COMPASS_R*1.05){dragHeading=true;G.controls.enabled=false;canvas.setPointerCapture(e.pointerId);S.headingTarget=null;S.heading=wrap360(Math.atan2(h.x,-h.z)*R2D);hideHint()}},true);
 canvas.addEventListener('pointermove',e=>{if(!dragHeading)return;const h=groundHit(e);if(h)S.heading=wrap360(Math.atan2(h.x,-h.z)*R2D)});
 canvas.addEventListener('pointerup',()=>{if(dragHeading){dragHeading=false;G.controls.enabled=S.view==='garden';store.set('heading',Math.round(S.heading))}});
 function hideHint(){$('hint').style.opacity=0;store.set('hinted',1)}
@@ -1254,8 +1309,8 @@ function frame(now){
   if(L.open&&L.page==='lPhases')phFrame(dt);
   if(S.view==='garden'){updateGarden(dt);updatePing();
     if(S.liftFrom){const k=clamp((now-S.liftT)/550,0,1);G.cam.position.y=S.liftFrom.y+k*k*30;G.controls.target.y+=dt*20}
-    {const f=S.top?122:66;if(Math.abs(G.cam.fov-f)>.1){G.cam.fov=lerp(G.cam.fov,f,1-Math.pow(.05,dt));G.cam.updateProjectionMatrix()}}
-    if(S.top)G.cam.lookAt(G.topLook);else G.controls.update();if(G.cam.position.y<.8)G.cam.position.y=.8;if(!L.open)renderer.render(G.scene,G.cam)}
+    if(!S.top)G.controls.update();if(G.cam.position.y<.8)G.cam.position.y=.8;
+    if(!L.open){if(S.top)renderFish();else renderer.render(G.scene,G.cam)}}
   else{SP.sunU.uT.value=now/1000;updateSpace();updateSpaceCam(dt);SP.controls.update();if(!L.open)renderer.render(SP.scene,SP.cam)}
   updateLabels();
   uiAcc+=dt;if(uiAcc>.12){uiAcc=0;updateTimeUI();updateCard();updateDial()}
